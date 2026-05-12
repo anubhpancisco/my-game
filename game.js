@@ -28,6 +28,96 @@
   const PARTNER_OUTREACH_GOLD =
     `Hi Raj — I'm the Renewal Manager for Meridian Health Systems. They have routing/switching and collaboration services on contract 92847-MHS-661 expiring ${CLOSE_DEADLINE_LABEL}th. I see quote CCW-7821-MHS in the system — are you working off this quote? Has it been sent to the customer? Let me know how I can help move this forward.`;
 
+  /** Canonical MCQ rows (order here = spread of correct answer across A/B/C slots before per-run shuffle). */
+  const MCQ_CANON = {
+    s0q0: [
+      { id: "contract", correct: true, text: "Contract # and note assets / end date" },
+      { id: "phone", correct: false, text: "Customer phone + billing address only" },
+      { id: "atr_only", correct: false, text: "Total ATR only — the rest lives in Salesforce" },
+    ],
+    s0q1: [
+      { id: "all_four", correct: false, text: "All four — they’re all for the same customer" },
+      { id: "three_lines", correct: true, text: "Only the first three — Catalyst 9200s expire in November (Q2 FY27), so they belong on a different opportunity" },
+      { id: "webex_wrong", correct: false, text: "Only the Catalyst 9300 and ISR lines — Webex is software, not services" },
+    ],
+    s1q0: [
+      { id: "opp1", correct: false, text: "#1 — Recent closed deal, good reference" },
+      { id: "opp3", correct: false, text: "#3 — Next quarter so it must be the upcoming one" },
+      { id: "opp2", correct: true, text: "#2 — Q4 FY26, $74,200 matches ATR, Stage 1" },
+    ],
+    s1q1: [
+      { id: "flag_lead", correct: true, text: "Flag this to your team lead — the partner should already be populated and something may need correction" },
+      { id: "ignore_partner", correct: false, text: "Ignore it — the partner will get added automatically when the quote is attached" },
+      { id: "wrong_partner", correct: false, text: "Add any partner yourself — it doesn’t matter who’s listed" },
+    ],
+    s2: [
+      { id: "ignore_flag", correct: false, text: "Ignore the flag — push for the PO" },
+      { id: "train_cs", correct: true, text: "Share training / ATX paths, escalate BE if needed, loop CS; Sales can pitch Advisory" },
+      { id: "exec_lock", correct: false, text: "Immediate senior-leadership Strategic De-Risk interlock" },
+    ],
+    s2interlock: [
+      { id: "operational", correct: false, text: "Operational — Monthly extended account team planning session" },
+      { id: "none_needed", correct: false, text: "No interlock needed — it’s 18 months away, there’s plenty of time" },
+      {
+        id: "strategic",
+        correct: true,
+        text: "Strategic — Quarterly account selection interlock with senior leadership (Sales Directors, CS Leader, Renewals Director)",
+      },
+    ],
+    s3o: [
+      {
+        id: "gold_opener",
+        correct: true,
+        text: "Intro + customer + contract + expiry + assets + quote # — ask if active and customer-facing",
+      },
+      { id: "thin_opener", correct: false, text: "“Hi Raj — what’s the status on Meridian?”" },
+      { id: "po_pressure", correct: false, text: "“Please send the PO ASAP — expires in July.”" },
+    ],
+    s4p: [
+      { id: "notes_path", correct: false, text: "Notes — drop a discount request note" },
+      { id: "quote_tab", correct: true, text: "Quote tab → Create Quote → pick the integrated CCWR quote" },
+      { id: "activity_only", correct: false, text: "Activity — log a discount call only" },
+    ],
+    s4x: [
+      { id: "wait_overnight", correct: false, text: "Wait overnight with no follow-up" },
+      { id: "support_ticket", correct: false, text: "Open a generic support ticket first" },
+      { id: "ping_finance", correct: true, text: "Ping Finance with Deal ID; gentle nudge if queue stalls ~30 min" },
+    ],
+    s5a: [
+      { id: "fran", correct: true, text: "Fran (Webex) — subscribe to quote alerts for CCW-7821-MHS" },
+      { id: "wait_poll", correct: false, text: "Wait until the 14th and poll CCWR manually" },
+      { id: "email_daily", correct: false, text: "Email Raj daily for the PO" },
+    ],
+    s5b: [
+      { id: "celebrate", correct: false, text: "Celebrate! “Order Booked” means it’s done!" },
+      {
+        id: "wait_convert",
+        correct: true,
+        text: "Wait — it can take 30 min to 2+ hours for conversion (longer at quarter-end). Monitor. If no movement in ~24 hours, investigate.",
+      },
+      { id: "ticket_now", correct: false, text: "Immediately open a support ticket — something is wrong" },
+    ],
+    s6a: [
+      { id: "ask_raj", correct: false, text: "Ask Raj for the SO each time" },
+      { id: "assume_sf", correct: false, text: "Assume Salesforce auto-filled it — never verify" },
+      { id: "ccwr_so", correct: true, text: "CCWR quote → order details → copy SO" },
+    ],
+    s6b: [
+      { id: "yes_mbr", correct: true, text: "Yes — partner, customer, and amount line up" },
+      { id: "no_mbr", correct: false, text: "No — amount is wildly off; escalate" },
+    ],
+  };
+
+  const MCQ_KEYS_BY_STAGE = [
+    ["s0q0", "s0q1"],
+    ["s1q0", "s1q1"],
+    ["s2", "s2interlock"],
+    ["s3o"],
+    ["s4p", "s4x"],
+    ["s5a", "s5b"],
+    ["s6a", "s6b"],
+  ];
+
   const STRIP_KEYS = [
     { id: "contract", label: "Contract" },
     { id: "opp", label: "Opp" },
@@ -60,6 +150,8 @@
     stageLedger: QUEST_LABELS.map(() => ({ wrong: 0, bonus: false })),
     gameOver: false,
     won: false,
+    /** Per-run shuffled MCQ rows: key → array with .letter A/B/C assigned. */
+    shuffledChoices: {},
     /** 'play' = stage content; 'exit' = completion summary (after win). */
     activeView: "play",
     s0: { substep: 0, choice: null, choice2: null, done: false },
@@ -270,22 +362,53 @@
     });
   }
 
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  const DISPLAY_LETTERS = ["A", "B", "C", "D"];
+  /** Stable per run (and per stage restart): shuffled order + display letters for one MCQ key. */
+  function getShuffledMcq(cacheKey, rows) {
+    if (!state.shuffledChoices[cacheKey]) {
+      const copy = shuffle(rows.map((r) => ({ ...r })));
+      copy.forEach((r, i) => {
+        r.letter = DISPLAY_LETTERS[i];
+      });
+      state.shuffledChoices[cacheKey] = copy;
+    }
+    return state.shuffledChoices[cacheKey];
+  }
+
+  function clearMcqKeysForStage(stageIndex) {
+    const keys = MCQ_KEYS_BY_STAGE[stageIndex];
+    if (!keys) return;
+    keys.forEach((k) => {
+      delete state.shuffledChoices[k];
+    });
+  }
+
+  function isChoiceCorrect(choices, id) {
+    const row = choices.find((c) => c.id === id);
+    return !!(row && row.correct);
+  }
+
   /* ---------- Stage renders ---------- */
 
   function renderStage0(root) {
     if (state.s0.substep === 0) {
       const sc = `<p>IB report: <strong>${escapeHtml(DEAL.customer)}</strong> — services ATR <strong>${escapeHtml(DEAL.atr)}</strong> (Catalyst 9300, ISR 4000, Webex). Contract ends <strong>${escapeHtml(DEAL.expiry)}</strong>.</p>`;
       const task = "Click the option that best answers: before you open Salesforce, what do you grab from the IB report?";
-      const choices = [
-        { id: "a", letter: "A", text: "Customer phone + billing address only", correct: false },
-        { id: "b", letter: "B", text: "Contract # and note assets / end date", correct: true },
-        { id: "c", letter: "C", text: "Total ATR only — the rest lives in Salesforce", correct: false },
-      ];
+      const choices = getShuffledMcq("s0q0", MCQ_CANON.s0q0);
       root.innerHTML = scenarioCard(sc, task) + choiceGrid(choices, state.s0.choice);
       wireChoices(root, (id) => {
         if (state.gameOver) return;
         if (state.s0.substep !== 0) return;
-        const ok = id === "b";
+        const ok = isChoiceCorrect(choices, id);
         state.s0.choice = id;
         if (ok) {
           setFeedback("<strong>Nice.</strong> You’ve got the contract anchor and context before CRM.", "ok");
@@ -294,7 +417,7 @@
         } else {
           applyWrong();
           const msg =
-            id === "a"
+            id === "phone"
               ? "<strong>Not quite.</strong> Phone and billing alone don’t anchor the renewal in contract #, assets, or end date — you’ll search blind in CRM."
               : "<strong>Not quite.</strong> ATR alone skips the contract line and dates you need to match the right opportunity and quarter.";
           setFeedback(msg, "bad");
@@ -319,21 +442,7 @@
     const sc2 = `${recap}<p><strong>Scenario:</strong> Your IB report shows the line items above for ${escapeHtml(DEAL.customer)}.</p>${table}`;
     const task2 =
       `Which line items belong on your renewal opportunity (Q4 FY26, expiring ${CLOSE_DEADLINE_LABEL} — same quarter as this Meridian run)?`;
-    const choices2 = [
-      { id: "a", letter: "A", text: "All four — they’re all for the same customer", correct: false },
-      {
-        id: "b",
-        letter: "B",
-        text: "Only the first three — Catalyst 9200s expire in November (Q2 FY27), so they belong on a different opportunity",
-        correct: true,
-      },
-      {
-        id: "c",
-        letter: "C",
-        text: "Only the Catalyst 9300 and ISR lines — Webex is software, not services",
-        correct: false,
-      },
-    ];
+    const choices2 = getShuffledMcq("s0q1", MCQ_CANON.s0q1);
     root.innerHTML =
       scenarioCard(sc2, task2) +
       choiceGrid(choices2, state.s0.choice2) +
@@ -346,7 +455,7 @@
       if (state.s0.done && id === state.s0.choice2) return;
       const wasDone = state.s0.done;
       state.s0.choice2 = id;
-      if (id === "b") {
+      if (isChoiceCorrect(choices2, id)) {
         setFeedback(
           `<strong>Correct.</strong> Only ${CLOSE_DEADLINE_LABEL} expiries roll into this Q4 FY26 renewal; November Catalyst 9200s sit on a future-quarter opportunity.`,
           "ok"
@@ -357,7 +466,7 @@
         if (wasDone) state.s0.done = false;
         applyWrong();
         const msg =
-          id === "a"
+          id === "all_four"
             ? "<strong>Not quite.</strong> Same customer doesn’t mean same renewal window — split by contract end date and fiscal quarter."
             : "<strong>Not quite.</strong> Webex Meeting Suite on this IB is a services contract (support), not a separate software-only exclusion here.";
         setFeedback(msg, "bad");
@@ -376,24 +485,20 @@
     if (state.s1.substep === 0) {
       const sc = `<p>You searched <span class="mono">${escapeHtml(DEAL.contract)}</span> in Salesforce. Four opportunities returned.</p><ul style="margin:8px 0;padding-left:1.2rem;color:var(--muted);font-size:0.88rem"><li>#1 Meridian Health — Q2 FY26 — $12,400 — Stage 6 (Closed Won)</li><li>#2 Meridian Health — Q4 FY26 — $74,200 — Stage 1</li><li>#3 Meridian Clinics LLC — Q1 FY27 — $8,900 — Stage 1</li><li>#4 Meridian Health — Q3 FY26 — $61,000 — Stage 6 (Closed Won)</li></ul>`;
       const task = "Click the opportunity that matches your IB brief (customer, quarter, ATR, active stage).";
-      const choices = [
-        { id: "a", letter: "A", text: "#1 — Recent closed deal, good reference", correct: false },
-        { id: "b", letter: "B", text: "#2 — Q4 FY26, $74,200 matches ATR, Stage 1", correct: true },
-        { id: "c", letter: "C", text: "#3 — Next quarter so it must be the upcoming one", correct: false },
-      ];
+      const choices = getShuffledMcq("s1q0", MCQ_CANON.s1q0);
       root.innerHTML = scenarioCard(sc, task) + choiceGrid(choices, state.s1.choice);
       wireChoices(root, (id) => {
         if (state.gameOver) return;
         if (state.s1.substep !== 0) return;
         state.s1.choice = id;
-        if (id === "b") {
+        if (isChoiceCorrect(choices, id)) {
           setFeedback("<strong>Locked in.</strong> Quarter, customer, amount, and stage line up with your IB view.", "ok");
           state.s1.substep = 1;
           els.btnContinue.disabled = true;
         } else {
           applyWrong();
           const msg =
-            id === "a"
+            id === "opp1"
               ? "<strong>Look again.</strong> #1 is already Closed Won — it’s not your open renewal pipeline."
               : "<strong>Look again.</strong> #3 is a different legal entity and amount; “next quarter” isn’t a substitute for matching ATR and customer.";
           setFeedback(msg, "bad");
@@ -418,11 +523,7 @@
       </tbody></table>
       <p>Your IB report shows the <strong>Services Bill-To Partner</strong> is <strong>${escapeHtml(DEAL.partner)}</strong>.</p>`;
     const task2 = "The partner field is blank. What do you do?";
-    const choices2 = [
-      { id: "a", letter: "A", text: "Ignore it — the partner will get added automatically when the quote is attached", correct: false },
-      { id: "b", letter: "B", text: "Flag this to your team lead — the partner should already be populated and something may need correction", correct: true },
-      { id: "c", letter: "C", text: "Add any partner yourself — it doesn’t matter who’s listed", correct: false },
-    ];
+    const choices2 = getShuffledMcq("s1q1", MCQ_CANON.s1q1);
     root.innerHTML =
       scenarioCard(sc2, task2) +
       choiceGrid(choices2, state.s1.choice2) +
@@ -435,7 +536,7 @@
       if (state.s1.done && id === state.s1.choice2) return;
       const wasDone = state.s1.done;
       state.s1.choice2 = id;
-      if (id === "b") {
+      if (isChoiceCorrect(choices2, id)) {
         setFeedback(
           "<strong>Right.</strong> Partner on the opp should match IB bill-to — fix before you lean on quoting, credit, and joint customer motion.",
           "ok"
@@ -446,7 +547,7 @@
         if (wasDone) state.s1.done = false;
         applyWrong();
         const msg =
-          id === "a"
+          id === "ignore_partner"
             ? "<strong>Risky assumption.</strong> Don’t count on auto-fill — misaligned partner breaks quoting and who gets looped in."
             : "<strong>Don’t guess.</strong> Random partner assignment poisons forecasting, deal credit, and partner trust.";
         setFeedback(msg, "bad");
@@ -464,13 +565,9 @@
   function renderStage2(root) {
     const sc = `<p>Lifecycle Dashboard: <strong>Medium</strong> risk — adoption barrier: <em>Additional training required</em> on Catalyst 9300. Deployed 6 months ago; utilization ~31%.</p>`;
     const task = "Per the De-Risk model, what’s the recommended move?";
-    const choices = [
-      { id: "a", letter: "A", text: "Ignore the flag — push for the PO", correct: false },
-      { id: "b", letter: "B", text: "Share training / ATX paths, escalate BE if needed, loop CS; Sales can pitch Advisory", correct: true },
-      { id: "c", letter: "C", text: "Immediate senior-leadership Strategic De-Risk interlock", correct: false },
-    ];
+    const choices = getShuffledMcq("s2", MCQ_CANON.s2);
 
-    if (state.s2.done && state.s2.choice === "b" && !state.s2.postBonus) {
+    if (state.s2.done && state.s2.choice === "train_cs" && !state.s2.postBonus) {
       root.innerHTML =
         scenarioCard(sc, task) +
         `<p class="bonus-banner"><strong>Bonus beat:</strong> You ping CSE + AM about the adoption barrier. CSE schedules ATX next week. Claim the time credit?</p>
@@ -495,22 +592,13 @@
     if (state.s2.postBonus && !state.s2.interlockDone) {
       const scG = `<p>Your manager: “We also have a <strong>$1.2M software renewal</strong> for <strong>GlobalTech Industries</strong> — <strong>18 months</strong> out — flagged <strong>HIGH</strong> risk. No valid customer contact on file. The AM hasn’t engaged in over a year.”</p>`;
       const taskG = "What type of De-Risk interlock is appropriate for GlobalTech?";
-      const choicesG = [
-        { id: "a", letter: "A", text: "Operational — Monthly extended account team planning session", correct: false },
-        {
-          id: "b",
-          letter: "B",
-          text: "Strategic — Quarterly account selection interlock with senior leadership (Sales Directors, CS Leader, Renewals Director)",
-          correct: true,
-        },
-        { id: "c", letter: "C", text: "No interlock needed — it’s 18 months away, there’s plenty of time", correct: false },
-      ];
+      const choicesG = getShuffledMcq("s2interlock", MCQ_CANON.s2interlock);
       root.innerHTML = scenarioCard(scG, taskG) + choiceGrid(choicesG, state.s2.interlockChoice);
       wireChoices(root, (id) => {
         if (state.gameOver) return;
         if (state.s2.interlockDone && id === state.s2.interlockChoice) return;
         state.s2.interlockChoice = id;
-        if (id === "b") {
+        if (isChoiceCorrect(choicesG, id)) {
           setFeedback(
             "<strong>Strategic fit.</strong> High value + HIGH risk + critical barrier + 6–24 months out → quarterly senior interlock for account selection — not default ops cadence.",
             "ok"
@@ -520,7 +608,7 @@
         } else {
           applyWrong();
           const msg =
-            id === "a"
+            id === "operational"
               ? "<strong>Sequence matters.</strong> Operational cadence follows strategic selection — this profile needs leadership alignment first."
               : "<strong>Too passive.</strong> De-Risk explicitly targets 6–24 months out on high-risk accounts — calendar distance isn’t a free pass.";
           setFeedback(msg, "bad");
@@ -552,7 +640,7 @@
       if (state.s2.done && id === state.s2.choice) return;
       const wasDone = state.s2.done;
       state.s2.choice = id;
-      if (id === "b") {
+      if (isChoiceCorrect(choices, id)) {
         setFeedback("<strong>Good call.</strong> Train + CS + optional AS beats ignoring adoption friction.", "ok");
         state.s2.done = true;
         state.achievements.add("risk_mitigator");
@@ -564,7 +652,7 @@
         }
         applyWrong();
         const msg =
-          id === "a"
+          id === "ignore_flag"
             ? "<strong>Risk still matters on services.</strong> Ignoring the adoption flag invites stall and surprises at signature."
             : "<strong>Too heavy for this signal.</strong> Medium risk calls for enablement + CS — senior Strategic De-Risk interlocks are selective, not default.";
         setFeedback(msg, "bad");
@@ -631,6 +719,7 @@
         state.s3.sequenceDone = false;
         state.s3.done = false;
         state.achievements.delete("partner_whisperer");
+        delete state.shuffledChoices.s3o;
         toast("Outreach choice reset.");
         renderStage3(root);
         refreshContinue();
@@ -746,23 +835,14 @@
 
     const sc = `<p>Quote <span class="mono">${escapeHtml(DEAL.quote)}</span> is in CCWR (by ${escapeHtml(DEAL.quoteAuthor)}, ${escapeHtml(DEAL.quoteDate)}). You’re drafting first partner touch.</p>`;
     const task = "Click the outreach that opens the cleanest thread with Raj.";
-    const choices = [
-      { id: "a", letter: "A", text: "“Hi Raj — what’s the status on Meridian?”", correct: false },
-      {
-        id: "b",
-        letter: "B",
-        text: "Intro + customer + contract + expiry + assets + quote # — ask if active and customer-facing",
-        correct: true,
-      },
-      { id: "c", letter: "C", text: "“Please send the PO ASAP — expires in July.”", correct: false },
-    ];
+    const choices = getShuffledMcq("s3o", MCQ_CANON.s3o);
     root.innerHTML = scenarioCard(sc, task) + choiceGrid(choices, state.s3.choice);
     wireChoices(root, (id) => {
       if (state.gameOver) return;
       if (state.s3.done && id === state.s3.choice) return;
       const wasDone = state.s3.done;
       state.s3.choice = id;
-      if (id === "b") {
+      if (isChoiceCorrect(choices, id)) {
         setFeedback(
           "<strong>Partner-ready context.</strong> Role, customer, contract, expiry, services scope, quote in system, and asks — fewer round-trips.",
           "ok"
@@ -780,7 +860,7 @@
         applyWrong();
         const contrast = ` Compare a <strong>full</strong> opener: role, <strong>${escapeHtml(DEAL.customer)}</strong>, routing/switching + collaboration scope, contract <span class="mono">${escapeHtml(DEAL.contract)}</span>, expiry <strong>${escapeHtml(DEAL.expiry)}</strong>, quote <span class="mono">${escapeHtml(DEAL.quote)}</span> in system, and crisp asks (working this quote? customer-facing?).`;
         setFeedback(
-          (id === "a"
+          (id === "thin_opener"
             ? "<strong>Too thin.</strong> “Status on Meridian?” doesn’t give contract, expiry, assets, or quote anchor — partners juggle dozens of deals."
             : "<strong>Too early / sharp.</strong> PO pressure before confirming the working quote and customer-facing state burns trust.") + contrast,
           "bad"
@@ -822,18 +902,14 @@
         <p>Standard renewal discount is <strong>23%</strong>. Raj needs <strong>26%</strong> — a <strong>3-point</strong> bump — so the deal pulls forward before ${CLOSE_DEADLINE_LABEL}. That extra 3% is the minimum move that matches “sign this week” without blowing past instant-approval rails on a 1-year renewal.</p>
         <p>You’re documenting the ask properly: a <strong>DSA</strong> from the integrated CCWR quote captures pull-forward (<strong>PF</strong>) and competitive pressure so approvers see a clean story.</p>`;
       const task = "In Salesforce, click the path where you start the DSA.";
-      const choices = [
-        { id: "a", letter: "A", text: "Notes — drop a discount request note", correct: false },
-        { id: "b", letter: "B", text: "Quote tab → Create Quote → pick the integrated CCWR quote", correct: true },
-        { id: "c", letter: "C", text: "Activity — log a discount call only", correct: false },
-      ];
+      const choices = getShuffledMcq("s4p", MCQ_CANON.s4p);
       root.innerHTML = scenarioCard(sc, task) + choiceGrid(choices, state.s4.choiceA);
       wireChoices(root, (id) => {
         if (state.gameOver) return;
         if (state.s4.substep !== 0) return;
-        if (state.s4.choiceA === "b" && id === "b") return;
+        if (state.s4.choiceA === "quote_tab" && id === "quote_tab") return;
         state.s4.choiceA = id;
-        if (id === "b") {
+        if (isChoiceCorrect(choices, id)) {
           setFeedback(
             "<strong>Right entry.</strong> DSA starts from the quote workspace — that’s how you document PF plus competitive pressure within policy, not notes-only shadow requests.",
             "ok"
@@ -845,7 +921,7 @@
         } else {
           applyWrong();
           const msg =
-            id === "a"
+            id === "notes_path"
               ? "<strong>Wrong door.</strong> Notes don’t attach structured justification to the CCWR line approvers read."
               : "<strong>Wrong door.</strong> Activity-only doesn’t open the integrated quote path Finance and Deal Desk expect.";
           setFeedback(`${msg} Discounting flows through <strong>Quote → Create Quote</strong> on the attached CCWR line.`, "bad");
@@ -917,17 +993,13 @@
       });
       els.btnSubmit.hidden = false;
       els.btnSubmit.textContent = "Qualify & submit DSA";
-      if (state.s4.choiceA === "b") setFeedback("Lock the DSA form fields.", null);
+      if (state.s4.choiceA === "quote_tab") setFeedback("Lock the DSA form fields.", null);
       els.btnContinue.disabled = true;
       return;
     }
     if (state.s4.substep === 2) {
       const sc = `<p><strong>Bonus:</strong> If you had asked for <strong>4 points</strong> (27%) and Finance owned the approval — what’s the pro move?</p>`;
-      const choices = [
-        { id: "a", letter: "A", text: "Wait overnight with no follow-up", correct: false },
-        { id: "b", letter: "B", text: "Ping Finance with Deal ID; gentle nudge if queue stalls ~30 min", correct: true },
-        { id: "c", letter: "C", text: "Open a generic support ticket first", correct: false },
-      ];
+      const choices = getShuffledMcq("s4x", MCQ_CANON.s4x);
       root.innerHTML = scenarioCard(sc, "Pick the best escalation hygiene.") + choiceGrid(choices, state.s4.bonusChoice);
       els.btnSubmit.hidden = true;
       wireChoices(root, (id) => {
@@ -935,7 +1007,7 @@
         if (state.s4.bonusDone && id === state.s4.bonusChoice) return;
         const wasDone = state.s4.bonusDone;
         state.s4.bonusChoice = id;
-        if (id === "b") {
+        if (isChoiceCorrect(choices, id)) {
           setFeedback("<strong>Queue-aware.</strong> Finance can clear fast — help them see the Deal ID quickly.", "ok");
           state.s4.bonusDone = true;
           state.s4.done = true;
@@ -949,7 +1021,7 @@
           }
           applyWrong();
           const msg =
-            id === "a"
+            id === "wait_overnight"
               ? "<strong>Passive isn’t professional.</strong> Finance queues move when owners have Deal IDs and context."
               : "<strong>Wrong channel.</strong> A generic ticket adds noise — route respectfully to the approver with the Deal ID.";
           setFeedback(`${msg} <strong>Best:</strong> ping Finance with the Deal ID; gentle nudge if the queue stalls ~30 minutes.`, "bad");
@@ -986,18 +1058,14 @@
     if (state.s5.substep === 0) {
       const sc = `<p>July 10 — Raj: “PO by July 14.” Quote is integrated; DSA is active. You want proactive visibility.</p>`;
       const task = "Click what you do <strong>right now</strong> to track the order (without spamming the partner).";
-      const choices = [
-        { id: "a", letter: "A", text: "Wait until the 14th and poll CCWR manually", correct: false },
-        { id: "b", letter: "B", text: "Fran (Webex) — subscribe to quote alerts for CCW-7821-MHS", correct: true },
-        { id: "c", letter: "C", text: "Email Raj daily for the PO", correct: false },
-      ];
+      const choices = getShuffledMcq("s5a", MCQ_CANON.s5a);
       root.innerHTML = scenarioCard(sc, task) + choiceGrid(choices, state.s5.choiceA);
       wireChoices(root, (id) => {
         if (state.gameOver) return;
         if (state.s5.substep !== 0) return;
-        if (state.s5.choiceA === "b" && id === "b") return;
+        if (state.s5.choiceA === "fran" && id === "fran") return;
         state.s5.choiceA = id;
-        if (id === "b") {
+        if (isChoiceCorrect(choices, id)) {
           setFeedback("<strong>Fran fan move.</strong> Subscription alerts beat manual refresh or nag mail.", "ok");
           state.achievements.add("fran_fan");
           state.s5.substep = 1;
@@ -1006,7 +1074,7 @@
         } else {
           applyWrong();
           const msg =
-            id === "a"
+            id === "wait_poll"
               ? "<strong>Too passive.</strong> Waiting until the due date leaves you blind to CCWR state changes."
               : "<strong>Wrong lever.</strong> Daily email nags the partner but doesn’t instrument the quote pipeline.";
           setFeedback(`${msg} <strong>Best:</strong> Fran — subscribe to quote alerts for <span class="mono">${escapeHtml(DEAL.quote)}</span>.`, "bad");
@@ -1085,16 +1153,7 @@
     const log = `2:47 PM — Order In Progress\n2:53 PM — Order Submitted\n3:01 PM — Order Booked\n… silence …\n5:30 PM — still no “Complete”`;
     const sc = `<p>CCWR Subscription Alerts room lights up, then stalls after <strong>Order Booked</strong>.</p><div class="order-log">${escapeHtml(log)}</div>`;
     const task = "What do you do at 5:30 PM with Order Booked but no further movement?";
-    const choices = [
-      { id: "a", letter: "A", text: "Celebrate! “Order Booked” means it’s done!", correct: false },
-      {
-        id: "b",
-        letter: "B",
-        text: "Wait — it can take 30 min to 2+ hours for conversion (longer at quarter-end). Monitor. If no movement in ~24 hours, investigate.",
-        correct: true,
-      },
-      { id: "c", letter: "C", text: "Immediately open a support ticket — something is wrong", correct: false },
-    ];
+    const choices = getShuffledMcq("s5b", MCQ_CANON.s5b);
     root.innerHTML =
       scenarioCard(sc, task) +
       `<p class="play-actions" style="margin:10px 0 0"><button type="button" class="btn ghost" id="btnS5ChangeFirst">Change my earlier answer</button></p>` +
@@ -1113,7 +1172,7 @@
       if (state.s5.done && id === state.s5.choiceB) return;
       const wasDone = state.s5.done;
       state.s5.choiceB = id;
-      if (id === "b") {
+      if (isChoiceCorrect(choices, id)) {
         setFeedback(
           "<strong>Pipeline literacy.</strong> Booked ≠ Complete — conversion can take hours (longer at quarter-end). Then press <strong>Continue</strong>.",
           "ok"
@@ -1124,7 +1183,7 @@
         if (wasDone) state.s5.done = false;
         applyWrong();
         const msg =
-          id === "a"
+          id === "celebrate"
             ? "<strong>Premature win.</strong> Booked is a milestone — you still want Conversion → Complete before you relax."
             : "<strong>Over-rotation.</strong> Support tickets burn goodwill when the happy path is often patience + a clock.";
         setFeedback(`${msg} Expect <strong>Conversion → Complete</strong>; investigate if stuck ~24h.`, "bad");
@@ -1151,31 +1210,18 @@
   const SPOILER_STAGE7_SF_ORDER =
     "Correct order: enter SO → verify Expected Services → add final opportunity note → Stage 3 → Closed Won → Save.";
 
-  function shuffle(arr) {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  }
-
   function renderStage6(root) {
     if (state.s6.substep === 0) {
       const sc = `<p>Order Complete. You need the SO for MBR, then sanity-check booking, then Salesforce hygiene.</p>`;
       const task = "Click where you grab the SO number first (source of truth before Salesforce).";
-      const choices = [
-        { id: "a", letter: "A", text: "Ask Raj for the SO each time", correct: false },
-        { id: "b", letter: "B", text: "CCWR quote → order details → copy SO", correct: true },
-        { id: "c", letter: "C", text: "Assume Salesforce auto-filled it — never verify", correct: false },
-      ];
+      const choices = getShuffledMcq("s6a", MCQ_CANON.s6a);
       root.innerHTML = scenarioCard(sc, task) + choiceGrid(choices, state.s6.choiceA);
       wireChoices(root, (id) => {
         if (state.gameOver) return;
         if (state.s6.substep !== 0) return;
-        if (state.s6.choiceA === "b" && id === "b") return;
+        if (state.s6.choiceA === "ccwr_so" && id === "ccwr_so") return;
         state.s6.choiceA = id;
-        if (id === "b") {
+        if (isChoiceCorrect(choices, id)) {
           setFeedback("<strong>Source of truth.</strong> CCWR order details first — Salesforce may lag.", "ok");
           state.s6.substep = 1;
           renderStage6(root);
@@ -1183,7 +1229,7 @@
         } else {
           applyWrong();
           const msg =
-            id === "a"
+            id === "ask_raj"
               ? "<strong>Partner isn’t the system of record.</strong> Raj can mistype or round-trip slowly — pull from CCWR first."
               : "<strong>Never assume.</strong> Auto-fill can be wrong or stale — verify from the quote’s order block.";
           setFeedback(msg, "bad");
@@ -1205,17 +1251,14 @@
           <dt>Net booking</dt><dd>${escapeHtml(DEAL.mbrNet)}</dd>
         </dl></div>`;
       const task = `Click whether this MBR row looks booking-ready (net after ~26% on ${escapeHtml(DEAL.listNet)} ≈ $54,9xx).`;
-      const choices = [
-        { id: "a", letter: "A", text: "Yes — partner, customer, and amount line up", correct: true },
-        { id: "b", letter: "B", text: "No — amount is wildly off; escalate", correct: false },
-      ];
+      const choices = getShuffledMcq("s6b", MCQ_CANON.s6b);
       root.innerHTML = scenarioCard(sc, task) + choiceGrid(choices, state.s6.choiceB);
       wireChoices(root, (id) => {
         if (state.gameOver) return;
         if (state.s6.substep !== 1) return;
-        if (state.s6.choiceB === "a" && id === "a") return;
+        if (state.s6.choiceB === "yes_mbr" && id === "yes_mbr") return;
         state.s6.choiceB = id;
-        if (id === "a") {
+        if (isChoiceCorrect(choices, id)) {
           setFeedback(
             "<strong>Matches expectation.</strong> Next: <strong>reorder</strong> the five Salesforce close-out steps, press <strong>Submit sequence</strong>, then <strong>Continue</strong>.",
             "ok"
@@ -1566,6 +1609,7 @@
   }
 
   function resetStageState() {
+    state.shuffledChoices = {};
     state.s0 = { substep: 0, choice: null, choice2: null, done: false };
     state.s1 = { substep: 0, choice: null, choice2: null, done: false };
     state.s2 = {
@@ -1620,12 +1664,15 @@
     state.stageLedger[state.stageIndex] = { wrong: 0, bonus: state.stageLedger[state.stageIndex].bonus };
     switch (state.stageIndex) {
       case 0:
+        clearMcqKeysForStage(0);
         state.s0 = { substep: 0, choice: null, choice2: null, done: false };
         break;
       case 1:
+        clearMcqKeysForStage(1);
         state.s1 = { substep: 0, choice: null, choice2: null, done: false };
         break;
       case 2:
+        clearMcqKeysForStage(2);
         state.s2 = {
           choice: null,
           bonusTaken: false,
@@ -1636,15 +1683,19 @@
         };
         break;
       case 3:
+        clearMcqKeysForStage(3);
         state.s3 = { substep: 0, choice: null, order: null, sequenceDone: false, done: false };
         break;
       case 4:
+        clearMcqKeysForStage(4);
         state.s4 = { choiceA: null, substep: 0, dsaFields: {}, dsaDone: false, bonusChoice: null, bonusDone: false, done: false };
         break;
       case 5:
+        clearMcqKeysForStage(5);
         state.s5 = { choiceA: null, choiceB: null, substep: 0, statusPick: {}, done: false };
         break;
       case 6:
+        clearMcqKeysForStage(6);
         state.s6 = { choiceA: null, choiceB: null, substep: 0, order: null, orderDone: false, done: false };
         break;
       default:
