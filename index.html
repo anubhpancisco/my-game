@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Renewal Quest: The End-to-End Challenge</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div id="confettiRoot" class="confetti-root" aria-hidden="true"></div>
+
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>Renewal Quest: The End-to-End Challenge</h1>
+          <p class="tagline">Meridian Health Systems · Close before July 15 · Browser-only practice (no live systems)</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button type="button" class="btn ghost" id="btnMenu">Menu</button>
+      </div>
+    </header>
+
+    <section class="hud" aria-label="Deal clock">
+      <div class="hud-row">
+        <div class="hud-title">
+          <span class="hud-icon" aria-hidden="true">📋</span>
+          <span><strong>ACTIVE DEAL</strong> <span class="muted">Meridian · NetEdge</span></span>
+        </div>
+        <div class="hud-stats">
+          <span class="hud-pill hud-pill--live"><span class="label">Days left</span> <strong id="hudDays">60</strong><span class="hud-suffix">/ 60</span></span>
+          <span class="hud-pill"><span class="label">⏱️ Run time</span> <strong id="hudTimer">0:00:00</strong></span>
+          <span class="hud-pill"><span class="label">ATR</span> <strong id="hudAtr">$74,200</strong></span>
+          <span class="hud-pill"><span class="label">Contract</span> <strong id="hudContract" class="mono">92847-MHS-661</strong></span>
+          <span class="hud-pill"><span class="label">Quote</span> <strong id="hudQuote" class="mono">—</strong></span>
+        </div>
+      </div>
+      <div class="hud-meter-row">
+        <div class="day-meter" aria-hidden="true">
+          <div class="day-meter__fill" id="dayMeterFill" style="width:100%"></div>
+        </div>
+      </div>
+      <div class="deal-strip" id="dealStrip" role="list" aria-label="Renewal path progress"></div>
+      <details class="why-play" id="whyPlayDetails">
+        <summary class="why-play-summary">How to play</summary>
+        <div class="why-play-body">
+          <p class="why-play-lede">Seven stages, one renewal. Wrong choices cost <strong>5 days</strong>. You start with <strong>60 days</strong> until July 15. Bonus in Stage 3 can give time back. Reach Closed Won before days hit zero.</p>
+        </div>
+      </details>
+    </section>
+
+    <div class="layout">
+      <aside class="workflow quest-log" aria-label="Quest log">
+        <div class="workflow-head">Quest log</div>
+        <ol class="workflow-list" id="workflowList"></ol>
+      </aside>
+
+      <main class="main-area">
+        <div class="play-shell play-shell--arena">
+          <span class="arena-corner arena-corner--tl" aria-hidden="true"></span>
+          <span class="arena-corner arena-corner--tr" aria-hidden="true"></span>
+          <span class="arena-corner arena-corner--bl" aria-hidden="true"></span>
+          <span class="arena-corner arena-corner--br" aria-hidden="true"></span>
+          <div class="play-head">
+            <p class="eyebrow" id="stageEyebrow"></p>
+            <div class="play-title-row">
+              <span class="stage-badge" id="stageBadge" aria-hidden="true">STAGE 1</span>
+              <h2 id="stageTitle"></h2>
+            </div>
+            <p class="lede" id="stageLede"></p>
+          </div>
+
+          <section class="mission-panel mission-panel--slim" id="stageMission" aria-labelledby="missionObjective">
+            <div class="mission-panel-inner">
+              <p class="mission-objective" id="missionObjective"></p>
+            </div>
+          </section>
+
+          <div class="play-body" id="stageBody"></div>
+          <footer class="play-foot">
+            <div class="feedback" id="feedback" role="status" aria-live="polite"></div>
+            <div class="play-actions">
+              <button type="button" class="btn secondary" id="btnSubmitAnswer" hidden>Submit</button>
+              <button type="button" class="btn secondary" id="btnHint">Hint</button>
+              <button type="button" class="btn secondary" id="btnRestartStage">Restart stage</button>
+              <button type="button" class="btn primary" id="btnContinue" disabled>Continue</button>
+            </div>
+          </footer>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="toast-host" id="toastHost" aria-live="polite"></div>
+
+  <div class="modal-backdrop" id="modalMenu" hidden>
+    <div class="modal" role="dialog" aria-labelledby="menuTitle">
+      <h3 id="menuTitle">Menu</h3>
+      <p class="muted">Everything runs in your browser. No live systems are connected.</p>
+      <ul class="modal-list">
+        <li><strong>Goal:</strong> Close the Meridian renewal in Salesforce before the contract clock runs out.</li>
+        <li><strong>Time:</strong> You begin with <strong>60 days</strong> (May 17 → July 15). Each wrong choice costs <strong>5 days</strong>. Stage 3 offers a small time bonus.</li>
+        <li><strong>Flow:</strong> Answer each step, then press <strong>Continue</strong> when it unlocks. Use <strong>Restart stage</strong> to reset the current stage only.</li>
+      </ul>
+      <div class="modal-actions">
+        <button type="button" class="btn primary" id="menuRestart">Restart full run</button>
+        <button type="button" class="btn ghost" id="menuClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
